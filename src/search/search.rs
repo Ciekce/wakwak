@@ -26,8 +26,6 @@ pub fn iterative_deepening(
 ) {
     let mut depth = 1;
     let mut completed_depth = 0;
-    let mut pv = PrincipalVariation::default();
-    let mut score = None;
 
     // Time management stuff
     let mut duck_stability = 0;
@@ -36,9 +34,15 @@ pub fn iterative_deepening(
     let mut prev_move;
 
     'id: loop {
+        for root_move in thread.root_moves.iter_mut() {
+            root_move.previous_score = root_move.score;
+            root_move.score = -Score::INFINITE;
+        }
+
+        thread.root_depth = depth as usize;
         thread.sel_depth = 0;
         thread.nmr_ply = None;
-        let new_score = Some(search::<Root>(
+        search::<Root>(
             &mut pos,
             thread,
             shared,
@@ -46,17 +50,19 @@ pub fn iterative_deepening(
             Score::INFINITE,
             depth as i32,
             0,
-        ));
+        );
         thread.nodes.flush();
+
+        thread.sort_root_moves();
 
         if depth > 1 && thread.stop {
             break 'id;
         }
 
-        score = new_score;
-        pv = thread.stack[0].pv.clone();
+        let pv_move = thread.pv_move();
+
         prev_move = best_move;
-        best_move = Some(pv[0]);
+        best_move = Some(pv_move.pv[0]);
 
         duck_stability += 1;
         if best_move.map(|mv| mv.duck()) != prev_move.map(|mv| mv.duck()) {
@@ -72,14 +78,7 @@ pub fn iterative_deepening(
         completed_depth += 1;
 
         if thread.id == 0 && info == SearchInfo::Full {
-            info.depth(
-                thread,
-                shared,
-                options,
-                completed_depth,
-                score.unwrap(),
-                &pv,
-            );
+            info.depth(thread, shared, options);
         }
 
         if thread.id == 0 {
@@ -121,22 +120,17 @@ pub fn iterative_deepening(
         }
 
         // All search threads have finished, we are ready for new commands.
-        shared.best_score.store(score.unwrap().0, Ordering::Relaxed);
+        shared
+            .best_score
+            .store(thread.pv_move().score.0, Ordering::Relaxed);
         shared.num_searching.store(0, Ordering::Release);
     }
 
     if thread.id == 0 && info != SearchInfo::None {
-        info.depth(
-            thread,
-            shared,
-            options,
-            completed_depth,
-            score.unwrap(),
-            &pv,
-        );
+        info.depth(thread, shared, options);
         println!(
             "bestmove {}",
-            pv[0].display(options.dumb_interface, options.frc)
+            thread.pv_move().pv[0].display(options.dumb_interface, options.frc)
         );
     }
 
@@ -178,10 +172,7 @@ fn adjust_eval(eval: Score, corr: i32) -> Score {
 #[inline]
 fn update_pv(thread: &mut ThreadData, mv: Move, ply: usize) {
     let [parent, child] = thread.stack.get_disjoint_mut([ply, ply + 1]).unwrap();
-
-    parent.pv.clear();
-    parent.pv.push(mv);
-    parent.pv.extend(child.pv.iter().copied());
+    parent.pv.update(mv, &child.pv);
 }
 
 fn search<Node: NodeType>(
@@ -543,8 +534,34 @@ fn search<Node: NodeType>(
         };
         pos.unmake_move();
 
-        if Node::ROOT && searched_moves == 0 {
-            update_pv(thread, mv, ply);
+        if Node::ROOT {
+            let root_move_idx = thread.get_root_move_idx(mv);
+            let root_move = &mut thread.root_moves[root_move_idx];
+
+            root_move.window_score = score;
+
+            if searched_moves == 0 || score > alpha {
+                root_move.searched_depth = thread.root_depth;
+                root_move.sel_depth = thread.sel_depth;
+
+                root_move.display_score = score;
+                root_move.score = score;
+
+                root_move.upper_bound = false;
+                root_move.lower_bound = false;
+
+                if score <= alpha {
+                    root_move.display_score = alpha;
+                    root_move.upper_bound = true;
+                } else if score >= beta {
+                    root_move.display_score = beta;
+                    root_move.lower_bound = true;
+                }
+
+                root_move.pv.update(mv, &thread.stack[1].pv);
+            } else {
+                root_move.score = -Score::INFINITE;
+            }
         }
 
         if thread.stop {
