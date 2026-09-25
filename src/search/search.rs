@@ -2,9 +2,10 @@ use crate::common::{Bitboard, Move, Piece, Square, between};
 use crate::engine::EngineOptions;
 use crate::position::Position;
 use crate::score::Score;
+use crate::search::cont::ContIndices;
+use crate::search::tt::TTFlag;
 use crate::search::{
-    Bound, ContCorrIndices, ContIndices, MAX_DEPTH, MAX_PLY, MovePicker, Params,
-    PrincipalVariation, SearchInfo, SharedData, Stage, ThreadData,
+    MAX_PLY, MovePicker, Params, PrincipalVariation, SearchInfo, SharedData, Stage, ThreadData,
 };
 use std::sync::atomic::Ordering;
 
@@ -13,8 +14,6 @@ pub struct SearchStack {
     pv: PrincipalVariation,
     raw_eval: Option<Score>,
     static_eval: Option<Score>,
-    skip_move: Option<Move>,
-    reduction: i32,
     mv: Option<Move>,
 }
 
@@ -27,8 +26,6 @@ pub fn iterative_deepening(
 ) {
     let mut depth = 1;
     let mut completed_depth = 0;
-    let mut pv = PrincipalVariation::default();
-    let mut score: Option<Score> = None;
 
     // Time management stuff
     let mut duck_stability = 0;
@@ -37,68 +34,52 @@ pub fn iterative_deepening(
     let mut prev_move;
 
     'id: loop {
-        let mut delta = Params::asp_delta();
-        let mut alpha = -Score::INFINITE;
-        let mut beta = Score::INFINITE;
-
-        if depth >= 4
-            && let Some(score) = score
-        {
-            alpha = (score - delta).max(-Score::INFINITE);
-            beta = (score + delta).min(Score::INFINITE);
+        for root_move in thread.root_moves.iter_mut() {
+            root_move.previous_score = root_move.score;
+            root_move.score = -Score::INFINITE;
         }
 
-        'asp: loop {
-            thread.sel_depth = 0;
-            thread.nmr_ply = None;
-            let new_score = search::<Root>(&mut pos, thread, shared, alpha, beta, depth as i32, 0);
-            thread.nodes.flush();
+        thread.root_depth = depth as usize;
+        thread.sel_depth = 0;
+        thread.nmr_ply = None;
+        search::<Root>(
+            &mut pos,
+            thread,
+            shared,
+            -Score::INFINITE,
+            Score::INFINITE,
+            depth as i32,
+            0,
+        );
+        thread.nodes.flush();
 
-            if depth > 1 && thread.stop {
-                break 'id;
-            }
+        thread.sort_root_moves();
 
-            if new_score > alpha && new_score < beta {
-                score = Some(new_score);
-                pv = thread.stack[0].pv.clone();
-                prev_move = best_move;
-                best_move = Some(pv[0]);
+        if depth > 1 && thread.stop {
+            break 'id;
+        }
 
-                duck_stability += 1;
-                if best_move.map(|mv| mv.duck()) != prev_move.map(|mv| mv.duck()) {
-                    duck_stability = 0;
-                }
+        let pv_move = thread.pv_move();
 
-                move_stability += 1;
-                if best_move != prev_move {
-                    move_stability = 0;
-                }
-            }
+        prev_move = best_move;
+        best_move = Some(pv_move.pv[0]);
 
-            let bound = if new_score <= alpha {
-                beta = Score(Params::lerp(alpha.0, beta.0, Params::asp_beta_lerp()));
-                alpha = (new_score - delta).max(-Score::INFINITE);
-                delta += delta * Params::asp_widen_scale() / 64;
-                Bound::Upper
-            } else if new_score >= beta {
-                beta = (new_score + delta).min(Score::INFINITE);
-                delta += delta * Params::asp_widen_scale() / 64;
-                Bound::Lower
-            } else {
-                Bound::Exact
-            };
+        duck_stability += 1;
+        if best_move.map(|mv| mv.duck()) != prev_move.map(|mv| mv.duck()) {
+            duck_stability = 0;
+        }
 
-            if thread.id == 0 && info == SearchInfo::Full {
-                info.depth(thread, shared, options, depth, new_score, bound, &pv);
-            }
-
-            if bound == Bound::Exact {
-                break 'asp;
-            }
+        move_stability += 1;
+        if best_move != prev_move {
+            move_stability = 0;
         }
 
         depth += 1;
         completed_depth += 1;
+
+        if thread.id == 0 && info == SearchInfo::Full {
+            info.depth(thread, shared, options);
+        }
 
         if thread.id == 0 {
             if shared
@@ -113,10 +94,6 @@ pub fn iterative_deepening(
             shared
                 .time_man
                 .deepen(depth, duck_stability, move_stability);
-        }
-
-        if completed_depth == MAX_DEPTH {
-            break 'id;
         }
     }
 
@@ -143,23 +120,17 @@ pub fn iterative_deepening(
         }
 
         // All search threads have finished, we are ready for new commands.
-        shared.best_score.store(score.unwrap().0, Ordering::Relaxed);
+        shared
+            .best_score
+            .store(thread.pv_move().score.0, Ordering::Relaxed);
         shared.num_searching.store(0, Ordering::Release);
     }
 
     if thread.id == 0 && info != SearchInfo::None {
-        info.depth(
-            thread,
-            shared,
-            options,
-            completed_depth,
-            score.unwrap(),
-            Bound::Exact,
-            &pv,
-        );
+        info.depth(thread, shared, options);
         println!(
             "bestmove {}",
-            pv[0].display(options.dumb_interface, options.frc)
+            thread.pv_move().pv[0].display(options.dumb_interface, options.frc)
         );
     }
 
@@ -201,10 +172,7 @@ fn adjust_eval(eval: Score, corr: i32) -> Score {
 #[inline]
 fn update_pv(thread: &mut ThreadData, mv: Move, ply: usize) {
     let [parent, child] = thread.stack.get_disjoint_mut([ply, ply + 1]).unwrap();
-
-    parent.pv.clear();
-    parent.pv.push(mv);
-    parent.pv.extend(child.pv.iter().copied());
+    parent.pv.update(mv, &child.pv);
 }
 
 fn search<Node: NodeType>(
@@ -678,8 +646,34 @@ fn search<Node: NodeType>(
         };
         pos.unmake_move();
 
-        if Node::ROOT && searched_moves == 0 {
-            update_pv(thread, mv, ply);
+        if Node::ROOT {
+            let root_move_idx = thread.get_root_move_idx(mv);
+            let root_move = &mut thread.root_moves[root_move_idx];
+
+            root_move.window_score = score;
+
+            if searched_moves == 0 || score > alpha {
+                root_move.searched_depth = thread.root_depth;
+                root_move.sel_depth = thread.sel_depth;
+
+                root_move.display_score = score;
+                root_move.score = score;
+
+                root_move.upper_bound = false;
+                root_move.lower_bound = false;
+
+                if score <= alpha {
+                    root_move.display_score = alpha;
+                    root_move.upper_bound = true;
+                } else if score >= beta {
+                    root_move.display_score = beta;
+                    root_move.lower_bound = true;
+                }
+
+                root_move.pv.update(mv, &thread.stack[1].pv);
+            } else {
+                root_move.score = -Score::INFINITE;
+            }
         }
 
         if thread.stop {
