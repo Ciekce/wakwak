@@ -446,7 +446,7 @@ fn search<Node: NodeType>(
         legal_moves += 1;
 
         let is_nonmated = best_score.is_some_and(|s: Score| !s.is_loss());
-        if is_nonmated {
+        if !Node::ROOT && is_nonmated {
             /*
             Duck Refutations: If the opponent immediately refutes a duck move,
             we can skip the rest of the duck moves that don't block the refutation(s).
