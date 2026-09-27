@@ -96,6 +96,13 @@ params! {
     duck_malus_scale: i32 => 128;
     duck_malus_max:   i32 => 2048;
 
+    quiet_duck_bonus_base:  i32 => 128;
+    quiet_duck_bonus_scale: i32 => 128;
+    quiet_duck_bonus_max:   i32 => 2048;
+    quiet_duck_malus_base:  i32 => 128;
+    quiet_duck_malus_scale: i32 => 128;
+    quiet_duck_malus_max:   i32 => 2048;
+
     cont1_bonus_base:  i32 => 128;
     cont1_bonus_scale: i32 => 128;
     cont1_bonus_max:   i32 => 2048;
@@ -121,6 +128,7 @@ params! {
     rfp_scale:     i32 => 50;
     rfp_imp_base:  i32 => -50;
     rfp_imp_scale: i32 => 50;
+    rfp_lerp:      i32 => 512;
 
     razor_base:  i32 => 320;
     razor_scale: i32 => 250;
@@ -143,6 +151,9 @@ params! {
     see_bishop: i32 => 330;
     see_rook:   i32 => 500;
     see_queen:  i32 => 900;
+
+    quiet_hp_base:  i32 => 0;
+    quiet_hp_scale: i32 => -2500;
 
     quiet_ldp_imp_threshold_base:  i32 => 2;
     quiet_ldp_imp_threshold_scale: i32 => 2;
@@ -174,10 +185,17 @@ params! {
     udp_history_min:     i32 => -2;
     udp_history_max:     i32 => 2;
 
+    ump_threshold_base:         i32 => 4;
+    ump_threshold_numerator:    i32 => 3;
+    ump_threshold_denominator:  i32 => 2;
+
     quiet_see_base:  i32 => 0;
     quiet_see_scale: i32 => -80;
     noisy_see_base:  i32 => 0;
     noisy_see_scale: i32 => -80;
+
+    se_beta:       i32 => 128;
+    se_depth_lerp: i32 => 512;
 
     mp_see_threshold: i32 => 0;
     mp_qs_see_threshold: i32 => 0;
@@ -200,12 +218,13 @@ params! {
     move_stability_min:   u128 => 2867;
 
     quiet_lmr_base:  i32 => 1024;
-    quiet_lmr_scale: i32 => 448;
+    quiet_lmr_scale: i32 => 96;
     lmr_exact:       i32 => 1024;
     lmr_imp:         i32 => 1024;
     lmr_pv:          i32 => 1024;
     lmr_in_check:    i32 => 512;
     lmr_history:     i32 => 64;
+    lmr_corr:        i32 => 3072;
 
     fp_base:  i32 => 256;
     fp_scale: i32 => 128;
@@ -218,15 +237,21 @@ params! {
     quiet_lmr_cont1_scale: i32 => 1024;
     quiet_lmr_cont2_scale: i32 => 1024;
 
-    quiet_mp_quiet_scale: i32 => 1024;
-    quiet_mp_duck_scale:  i32 => 1024;
-    quiet_mp_pawn_scale:  i32 => 1024;
-    quiet_mp_cont1_scale: i32 => 1024;
-    quiet_mp_cont2_scale: i32 => 1024;
-    quiet_mp_cont4_scale: i32 => 1024;
+    quiet_mp_quiet_scale:       i32 => 1024;
+    quiet_mp_duck_scale:        i32 => 1024;
+    quiet_mp_pawn_scale:        i32 => 1024;
+    quiet_mp_quiet_duck_scale:  i32 => 1024;
+    quiet_mp_cont1_scale:       i32 => 1024;
+    quiet_mp_cont2_scale:       i32 => 1024;
+    quiet_mp_cont4_scale:       i32 => 1024;
 
     noisy_mp_noisy_scale: i32 => 128;
     noisy_mp_duck_scale:  i32 => 128;
+
+    quiet_hp_quiet_scale: i32 => 1024;
+    quiet_hp_duck_scale:  i32 => 1024;
+    quiet_hp_cont1_scale: i32 => 1024;
+    quiet_hp_cont2_scale: i32 => 1024;
 }
 
 impl Params {
@@ -273,6 +298,18 @@ impl Params {
     #[inline]
     pub fn duck_malus(depth: i32) -> i32 {
         -(Self::duck_malus_base() + Self::duck_malus_scale() * depth).min(Self::duck_malus_max())
+    }
+
+    #[inline]
+    pub fn quiet_duck_bonus(depth: i32) -> i32 {
+        (Self::quiet_duck_bonus_base() + Self::quiet_duck_bonus_scale() * depth)
+            .min(Self::quiet_duck_bonus_max())
+    }
+
+    #[inline]
+    pub fn quiet_duck_malus(depth: i32) -> i32 {
+        -(Self::quiet_duck_malus_base() + Self::quiet_duck_malus_scale() * depth)
+            .min(Self::quiet_duck_malus_max())
     }
 
     #[inline]
@@ -337,6 +374,11 @@ impl Params {
     #[inline]
     pub const fn razor_margin(depth: i32) -> i32 {
         Self::razor_base() + Self::razor_scale() * depth
+    }
+
+    #[inline]
+    pub const fn quiet_hp_margin(depth: i32) -> i32 {
+        Self::quiet_hp_base() + Self::quiet_hp_scale() * depth * depth
     }
 
     #[inline]
@@ -409,6 +451,12 @@ impl Params {
     }
 
     #[inline]
+    pub fn ump_threshold(depth: i32) -> i32 {
+        Self::ump_threshold_base()
+            + Self::ump_threshold_numerator() * depth * depth / Self::ump_threshold_denominator()
+    }
+
+    #[inline]
     pub fn see_margin(depth: i32, is_quiet: bool) -> i32 {
         if is_quiet {
             Self::quiet_see_base() + Self::quiet_see_scale() * depth
@@ -456,10 +504,11 @@ impl Params {
     }
 
     #[inline]
-    pub fn lmr(depth: i32) -> i32 {
+    pub fn lmr(depth: i32, unique_moves: i32) -> i32 {
         let log_depth = depth.ilog2() as i32;
+        let log_moves = (unique_moves + 1).ilog2() as i32;
 
-        Self::quiet_lmr_base() + Self::quiet_lmr_scale() * log_depth
+        Self::quiet_lmr_base() + Self::quiet_lmr_scale() * log_depth * log_moves
     }
 
     #[inline]
@@ -474,10 +523,14 @@ impl Params {
     }
 
     #[inline]
-    pub fn quiet_lmr_history(thread: &ThreadData, pos: &Position, mv: Move) -> i32 {
+    pub fn quiet_lmr_history(
+        thread: &ThreadData,
+        pos: &Position,
+        indices: ContIndices,
+        mv: Move,
+    ) -> i32 {
         let board = pos.board();
         let mut history = 0;
-        let indices = ContIndices::new(pos);
 
         history += thread.history.quiet(board, mv) * Self::quiet_lmr_quiet_scale();
         history += thread.history.duck(board, mv) * Self::quiet_lmr_duck_scale();
@@ -499,6 +552,7 @@ impl Params {
         history_score += history.quiet(board, mv) * Self::quiet_mp_quiet_scale();
         history_score += history.duck(board, mv) * Self::quiet_mp_duck_scale();
         history_score += history.pawn(board, mv) * Self::quiet_mp_pawn_scale();
+        history_score += history.quiet_duck(board, mv) * Self::quiet_mp_quiet_duck_scale();
         history_score += history.cont1(board, indices, mv) * Self::quiet_mp_cont1_scale();
         history_score += history.cont2(board, indices, mv) * Self::quiet_mp_cont2_scale();
         history_score += history.cont4(board, indices, mv) * Self::quiet_mp_cont4_scale();
@@ -517,6 +571,24 @@ impl Params {
     }
 
     #[inline]
+    pub fn quiet_hp_history(
+        thread: &ThreadData,
+        pos: &Position,
+        indices: ContIndices,
+        mv: Move,
+    ) -> i32 {
+        let board = pos.board();
+        let mut history = 0;
+
+        history += thread.history.quiet(board, mv) * Self::quiet_hp_quiet_scale();
+        history += thread.history.duck(board, mv) * Self::quiet_hp_duck_scale();
+        history += thread.history.cont1(board, indices, mv) * Self::quiet_hp_cont1_scale();
+        history += thread.history.cont2(board, indices, mv) * Self::quiet_hp_cont2_scale();
+
+        history / 1024
+    }
+
+    #[inline]
     pub fn iid_depth(depth: i32) -> i32 {
         (Params::iid_depth_scale() * depth - Params::iid_depth_reduction()) / 1024
     }
@@ -529,6 +601,15 @@ impl Params {
     #[inline]
     pub fn fp_margin(depth: i32) -> i32 {
         Params::fp_base() + Params::fp_scale() * depth
+    }
+
+    #[inline]
+    pub fn lerp(a: i32, b: i32, t: i32) -> i32 {
+        let a = a as i64;
+        let b = b as i64;
+        let t = t as i64;
+
+        ((a * (1024 - t) + b * t) / 1024) as i32
     }
 
     #[inline]
