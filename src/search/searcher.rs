@@ -179,9 +179,12 @@ fn thread_loop(mut rx: Receiver<ThreadCommand>, shared: Arc<SharedData>, id: usi
 
                 {
                     let root_moves = shared.root_moves.read().unwrap();
+
                     thread.root_moves.clear();
                     thread.root_moves.reserve(root_moves.len());
                     thread.root_moves.extend_from_slice(&root_moves);
+
+                    thread.multipv = options.multipv.min(root_moves.len());
                 }
 
                 iterative_deepening(position, &mut thread, &shared, options, info);
@@ -285,6 +288,8 @@ pub struct ThreadData {
     pub iid_iteration: usize,
     pub root_depth: usize,
     pub sel_depth: usize,
+    pub multipv: usize,
+    pub pv_idx: usize,
     pub stop: bool,
     pub id: usize,
 }
@@ -302,6 +307,8 @@ impl ThreadData {
             iid_iteration: 0,
             root_depth: 0,
             sel_depth: 0,
+            multipv: 1,
+            pv_idx: 0,
             stop: false,
             id,
         }
@@ -312,6 +319,12 @@ impl ThreadData {
             .iter()
             .position(|root_move| root_move.pv[0] == mv)
             .unwrap()
+    }
+
+    pub fn is_legal_root_move(&self, mv: Move) -> bool {
+        self.root_moves[self.pv_idx..]
+            .iter()
+            .any(|root_move| root_move.pv[0] == mv)
     }
 
     pub fn pv_move(&self) -> &RootMove {

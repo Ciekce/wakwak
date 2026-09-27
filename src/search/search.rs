@@ -40,23 +40,29 @@ pub fn iterative_deepening(
         }
 
         thread.root_depth = depth as usize;
-        thread.sel_depth = 0;
-        thread.nmr_ply = None;
-        search::<Root>(
-            &mut pos,
-            thread,
-            shared,
-            -Score::INFINITE,
-            Score::INFINITE,
-            depth as i32,
-            0,
-        );
-        thread.nodes.flush();
+        thread.pv_idx = 0;
 
-        thread.sort_root_moves();
+        while thread.pv_idx < thread.multipv {
+            thread.sel_depth = 0;
+            thread.nmr_ply = None;
+            search::<Root>(
+                &mut pos,
+                thread,
+                shared,
+                -Score::INFINITE,
+                Score::INFINITE,
+                depth as i32,
+                0,
+            );
+            thread.nodes.flush();
 
-        if depth > 1 && thread.stop {
-            break 'id;
+            thread.sort_root_moves();
+
+            if depth > 1 && thread.stop {
+                break 'id;
+            }
+
+            thread.pv_idx += 1;
         }
 
         let pv_move = thread.pv_move();
@@ -227,7 +233,11 @@ fn search<Node: NodeType>(
     */
     let skip_move = thread.stack[ply].skip_move;
     let tt_entry = shared.tt.probe(pos.board().hash(), ply);
-    let mut tt_move = tt_entry.and_then(|e| e.best_move);
+    let mut tt_move = if Node::ROOT && thread.root_depth > 1 {
+        Some(thread.root_moves[thread.pv_idx].pv[0])
+    } else {
+        tt_entry.and_then(|e| e.best_move)
+    };
 
     if !Node::PV
         && skip_move.is_none()
@@ -429,6 +439,10 @@ fn search<Node: NodeType>(
 
     let cont_indices = ContIndices::new(pos);
     while let Some(mv) = move_picker.next(pos, thread, cont_indices) {
+        if Node::ROOT && !thread.is_legal_root_move(mv) {
+            continue;
+        }
+
         if skip_move == Some(mv) {
             continue;
         }
@@ -646,6 +660,11 @@ fn search<Node: NodeType>(
         };
         pos.unmake_move();
 
+        if thread.stop {
+            thread.move_stack.pop_ply();
+            return Score::ZERO;
+        }
+
         if Node::ROOT {
             let root_move_idx = thread.get_root_move_idx(mv);
             let root_move = &mut thread.root_moves[root_move_idx];
@@ -674,11 +693,6 @@ fn search<Node: NodeType>(
             } else {
                 root_move.score = -Score::INFINITE;
             }
-        }
-
-        if thread.stop {
-            thread.move_stack.pop_ply();
-            return Score::ZERO;
         }
 
         // Duck Refutations
@@ -761,7 +775,7 @@ fn search<Node: NodeType>(
         );
     }
 
-    if skip_move.is_none() {
+    if skip_move.is_none() && (!Node::ROOT || thread.pv_idx == 0) {
         shared.tt.insert(
             pos.board().hash(),
             best_move,
