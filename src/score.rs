@@ -109,7 +109,7 @@ impl PartialEq<Score> for Option<Score> {
 impl PartialOrd<Score> for Option<Score> {
     #[inline]
     fn partial_cmp(&self, other: &Score) -> Option<Ordering> {
-        other.partial_cmp(&self.unwrap_or(-Score::INFINITE))
+        self.unwrap_or(-Score::INFINITE).partial_cmp(other)
     }
 }
 
