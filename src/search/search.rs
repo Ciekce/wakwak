@@ -3,8 +3,8 @@ use crate::engine::EngineOptions;
 use crate::position::Position;
 use crate::score::Score;
 use crate::search::{
-    Bound, ContCorrIndices, ContIndices, MAX_PLY, MovePicker, Params, PrincipalVariation,
-    SearchInfo, SharedData, Stage, ThreadData,
+    Bound, ContCorrIndices, ContIndices, MAX_DEPTH, MAX_PLY, MovePicker, Params,
+    PrincipalVariation, SearchInfo, SharedData, Stage, ThreadData,
 };
 use std::sync::atomic::Ordering;
 
@@ -112,6 +112,10 @@ pub fn iterative_deepening(
             shared
                 .time_man
                 .deepen(depth, duck_stability, move_stability);
+        }
+
+        if completed_depth == MAX_DEPTH {
+            break 'id;
         }
     }
 
