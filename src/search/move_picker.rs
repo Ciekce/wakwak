@@ -143,6 +143,8 @@ pub struct MovePicker {
     prune_quiet_neutrals: bool,
     prune_noisy_neutrals: bool,
     bad_noisy_count: usize,
+    sort_start: usize,
+    sorted_end: usize,
     cursor: usize,
 }
 
@@ -165,6 +167,8 @@ impl MovePicker {
             prune_quiet_neutrals,
             prune_noisy_neutrals,
             bad_noisy_count: 0,
+            sort_start: 0,
+            sorted_end: 0,
             cursor: 0,
         }
     }
@@ -222,6 +226,7 @@ impl MovePicker {
         if self.stage == Stage::GenerateQuiets {
             if self.skip_quiets {
                 self.stage = Stage::YieldBadNoisies;
+                self.sorted_end = self.bad_noisy_count;
                 self.cursor = 0;
             } else {
                 let start = thread.move_stack.add_moves::<Quiet>(
@@ -232,6 +237,8 @@ impl MovePicker {
                 );
                 self.score_quiets(board, thread, indices, start);
                 self.stage = Stage::YieldQuiets;
+                self.sort_start = start;
+                self.sorted_end = start;
             }
         }
 
@@ -243,6 +250,7 @@ impl MovePicker {
             }
 
             self.stage = Stage::YieldBadNoisies;
+            self.sorted_end = self.bad_noisy_count;
             self.cursor = 0;
         }
 
@@ -264,6 +272,7 @@ impl MovePicker {
         let moves = thread.move_stack.get_mut();
 
         while self.cursor < moves.len() {
+            self.sort_next(moves, moves.len());
             let mv = moves[self.cursor].0;
             self.cursor += 1;
 
@@ -284,10 +293,11 @@ impl MovePicker {
     }
 
     #[inline]
-    fn yield_until(&mut self, thread: &ThreadData, index: usize) -> Option<Move> {
-        let moves = thread.move_stack.get();
+    fn yield_until(&mut self, thread: &mut ThreadData, index: usize) -> Option<Move> {
+        let moves = thread.move_stack.get_mut();
 
         while self.cursor < index {
+            self.sort_next(moves, index);
             let mv = moves[self.cursor].0;
             self.cursor += 1;
 
@@ -298,6 +308,21 @@ impl MovePicker {
         }
 
         None
+    }
+
+    #[inline]
+    fn sort_next(&mut self, moves: &mut [ScoredMove], end: usize) {
+        if self.cursor == self.sorted_end {
+            let batch = (self.cursor - self.sort_start)
+                .max(64)
+                .min(end - self.cursor);
+            let remaining = &mut moves[self.cursor..end];
+            if batch < remaining.len() {
+                remaining.select_nth_unstable_by_key(batch, |m| Reverse(m.1));
+            }
+            remaining[..batch].sort_unstable_by_key(|m| Reverse(m.1));
+            self.sorted_end = self.cursor + batch;
+        }
     }
 
     #[inline]
@@ -313,8 +338,6 @@ impl MovePicker {
             scored.1 =
                 mvv(board, mv) * 8 + Params::noisy_mp_history(thread.history.as_ref(), board, mv);
         }
-
-        moves[start..].sort_unstable_by_key(|m| Reverse(m.1));
     }
 
     #[inline]
@@ -337,7 +360,5 @@ impl MovePicker {
             scored.1 = Params::quiet_mp_history(thread.history.as_ref(), board, indices, mv)
                 - Params::mp_quiet_neutral_malus() * is_neutral as i32;
         }
-
-        moves[start..].sort_unstable_by_key(|m| Reverse(m.1));
     }
 }
