@@ -59,7 +59,8 @@ pub mod i32s {
             _mm512_add_epi32 as add, _mm512_loadu_epi32 as load, _mm512_max_epi32 as max,
             _mm512_min_epi32 as min, _mm512_mullo_epi32 as mul,
             _mm512_reduce_add_epi32 as reduce_add, _mm512_set1_epi32 as splat,
-            _mm512_srai_epi32 as shr_const, _mm512_storeu_epi32 as store,
+            _mm512_slli_epi32 as shl_const, _mm512_srai_epi32 as shr_const,
+            _mm512_storeu_epi32 as store,
         },
         convert::identity as reinterpret_i8,
     };

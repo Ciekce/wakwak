@@ -66,7 +66,8 @@ pub mod i32s {
     pub use std::{
         arch::x86_64::{
             _mm256_add_epi32 as add, _mm256_max_epi32 as max, _mm256_min_epi32 as min,
-            _mm256_mullo_epi32 as mul, _mm256_set1_epi32 as splat, _mm256_srai_epi32 as shr_const,
+            _mm256_mullo_epi32 as mul, _mm256_set1_epi32 as splat, _mm256_slli_epi32 as shl_const,
+            _mm256_srai_epi32 as shr_const,
         },
         convert::identity as reinterpret_i8,
     };

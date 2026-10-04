@@ -88,8 +88,8 @@ fn propagate_l1(act_ft: &[i8; L1]) -> [i32; L2 * 2] {
             }
 
             let shifted = shr_const::<2>(add(bias, sum));
-            let clipped = min(max(shifted, splat(0)), splat(Q * Q));
-            let squared = shr_const::<12>(min(mul(shifted, shifted), splat(Q.pow(4))));
+            let clipped = shl_const::<6>(min(max(shifted, splat(0)), splat(Q * Q)));
+            let squared = shr_const::<6>(min(mul(shifted, shifted), splat(Q.pow(4))));
             store(out.as_mut_ptr().add(i * LANES), clipped);
             store(out.as_mut_ptr().add(i * LANES + L2), squared);
         }
@@ -104,7 +104,7 @@ fn propagate_l2(act_l1: &[i32; L2 * 2]) -> [i32; L3] {
             std::array::from_fn(|i| load(NET.l2b.as_ptr().add(i * LANES)));
 
         for i in 0..(L2 * 2) {
-            let r = splat(act_l1[i]);
+            let r = splat(act_l1[i] >> 6);
             for j in 0..L3 / LANES {
                 let l = load(NET.l2w[i].as_ptr().add(j * LANES));
                 sums[j] = add(sums[j], mul(l, r));
@@ -113,8 +113,9 @@ fn propagate_l2(act_l1: &[i32; L2 * 2]) -> [i32; L3] {
 
         let mut out = [0i32; L3];
         for (i, sum) in sums.iter().enumerate() {
+            let skipped = load(act_l1.as_ptr().add(i * LANES));
             let clamped = min(max(*sum, splat(0)), splat(Q.pow(3)));
-            store(out.as_mut_ptr().add(i * LANES), clamped);
+            store(out.as_mut_ptr().add(i * LANES), add(skipped, clamped));
         }
 
         out

@@ -67,6 +67,7 @@ pub mod i32s {
     pub use std::arch::aarch64::{
         vaddq_s32 as add, vaddvq_s32 as reduce_add, vdupq_n_s32 as splat, vld1q_s32 as load,
         vmaxq_s32 as max, vminq_s32 as min, vmulq_s32 as mul,
-        vreinterpretq_s8_s32 as reinterpret_i8, vshrq_n_s32 as shr_const, vst1q_s32 as store,
+        vreinterpretq_s8_s32 as reinterpret_i8, vshlq_n_s32 as shl_const, vshrq_n_s32 as shr_const,
+        vst1q_s32 as store,
     };
 }
