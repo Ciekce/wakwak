@@ -47,10 +47,20 @@ pub fn iterative_deepening(
             beta = (score + delta).min(Score::INFINITE);
         }
 
+        let mut reduction = 0;
+
         'asp: loop {
             thread.sel_depth = 0;
             thread.nmr_ply = None;
-            let new_score = search::<Root>(&mut pos, thread, shared, alpha, beta, depth as i32, 0);
+            let new_score = search::<Root>(
+                &mut pos,
+                thread,
+                shared,
+                alpha,
+                beta,
+                depth as i32 - reduction,
+                0,
+            );
             thread.nodes.flush();
 
             if depth > 1 && thread.stop {
@@ -75,11 +85,13 @@ pub fn iterative_deepening(
             }
 
             let bound = if new_score <= alpha {
+                reduction = (reduction + 1).min(3);
                 beta = Score(Params::lerp(alpha.0, beta.0, Params::asp_beta_lerp()));
                 alpha = (new_score - delta).max(-Score::INFINITE);
                 delta += delta * Params::asp_widen_scale() / 64;
                 Bound::Upper
             } else if new_score >= beta {
+                reduction = 0;
                 beta = (new_score + delta).min(Score::INFINITE);
                 delta += delta * Params::asp_widen_scale() / 64;
                 Bound::Lower
