@@ -722,7 +722,11 @@ fn search<Node: NodeType>(
         };
     }
 
-    let best_score = best_score.unwrap();
+    let mut best_score = best_score.unwrap();
+
+    if best_score >= beta && !best_score.is_mate() && !beta.is_mate() {
+        best_score = (best_score * depth + beta) / (depth + 1);
+    }
 
     if pos.board().duck().is_some()
         && skip_move.is_none()
