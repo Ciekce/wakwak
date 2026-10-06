@@ -273,9 +273,8 @@ fn search<Node: NodeType>(
         }
     }
 
-    if depth > 0
+    if (!Node::PV || tt_move.is_none())
         && skip_move.is_none()
-        && (!Node::PV || tt_move.is_none())
         && let Some(entry) = shared.tt.probe(pos.board().duckless_hash())
         && entry.bound() == Bound::Lower
         && !entry.score().is_mate()
