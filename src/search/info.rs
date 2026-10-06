@@ -35,10 +35,10 @@ impl SearchInfo {
                 _ => "",
             };
 
-            print!("info");
-
             if options.multipv > 1 {
-                print!(" multipv {}", pv_idx + 1);
+                print!("info multipv {}", pv_idx + 1);
+            } else {
+                print!("info");
             }
 
             println!(
