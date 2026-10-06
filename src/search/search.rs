@@ -473,6 +473,7 @@ fn search<Node: NodeType>(
         if Node::ROOT && !thread.is_legal_root_move(mv) {
             continue;
         }
+
         if skip_move == Some(mv) {
             continue;
         }
