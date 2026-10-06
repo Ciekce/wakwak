@@ -4,7 +4,7 @@ use crate::position::Position;
 use crate::score::Score;
 use crate::search::tt::TranspositionTable;
 use crate::search::{
-    History, MAX_PLY, MoveStack, PrincipalVariation, SearchInfo, SearchStack, TimeManager,
+    Bound, History, MAX_PLY, MoveStack, PrincipalVariation, SearchInfo, SearchStack, TimeManager,
     iterative_deepening,
 };
 use crate::uci::SearchLimit;
@@ -204,8 +204,7 @@ pub struct RootMove {
     pub window_score: Score,
     pub display_score: Score,
     pub previous_score: Score,
-    pub upper_bound: bool,
-    pub lower_bound: bool,
+    pub bound: Bound,
     pub searched_depth: usize,
     pub sel_depth: usize,
     pub pv: PrincipalVariation,
@@ -218,8 +217,7 @@ impl RootMove {
             window_score: -Score::INFINITE,
             display_score: -Score::INFINITE,
             previous_score: -Score::INFINITE,
-            upper_bound: false,
-            lower_bound: false,
+            bound: Bound::None,
             searched_depth: 1,
             sel_depth: 0,
             pv: Default::default(),
@@ -332,13 +330,11 @@ impl ThreadData {
     }
 
     pub fn sort_searched_root_moves(&mut self) {
-        self.root_moves[..=self.pv_idx]
-            .sort_by_key(|root_move| std::cmp::Reverse(root_move.score));
+        self.root_moves[..=self.pv_idx].sort_by_key(|root_move| std::cmp::Reverse(root_move.score));
     }
 
     pub fn sort_remaining_root_moves(&mut self) {
-        self.root_moves[self.pv_idx..]
-            .sort_by_key(|root_move| std::cmp::Reverse(root_move.score));
+        self.root_moves[self.pv_idx..].sort_by_key(|root_move| std::cmp::Reverse(root_move.score));
     }
 
     #[inline]

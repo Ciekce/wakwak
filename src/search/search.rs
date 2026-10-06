@@ -681,15 +681,14 @@ fn search<Node: NodeType>(
                 root_move.display_score = score;
                 root_move.score = score;
 
-                root_move.upper_bound = false;
-                root_move.lower_bound = false;
+                root_move.bound = Bound::Exact;
 
                 if score <= alpha {
                     root_move.display_score = alpha;
-                    root_move.upper_bound = true;
+                    root_move.bound = Bound::Upper;
                 } else if score >= beta {
                     root_move.display_score = beta;
-                    root_move.lower_bound = true;
+                    root_move.bound = Bound::Lower;
                 }
 
                 root_move.pv.update(mv, &thread.stack[1].pv);
