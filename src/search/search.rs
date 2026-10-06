@@ -7,6 +7,7 @@ use crate::search::{
     PrincipalVariation, SearchInfo, SharedData, Stage, ThreadData,
 };
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 #[derive(Debug, Clone, Default)]
 pub struct SearchStack {
@@ -25,13 +26,12 @@ pub fn iterative_deepening(
     info: SearchInfo,
 ) {
     let mut depth = 1;
-    let mut completed_depth = 0;
 
     // Time management stuff
     let mut duck_stability = 0;
     let mut move_stability = 0;
     let mut best_move = None;
-    let mut prev_move;
+    let mut prev_move = None;
 
     'id: loop {
         for root_move in thread.root_moves.iter_mut() {
@@ -91,54 +91,60 @@ pub fn iterative_deepening(
 
             thread.sort_searched_root_moves();
 
+            if depth == MAX_DEPTH {
+                thread.stop = true;
+            }
+
+            let last_pv = thread.pv_idx + 1 == thread.multipv;
+
+            if last_pv && !thread.stop {
+                let pv_move = thread.pv_move();
+
+                prev_move = best_move;
+                best_move = Some(pv_move.pv[0]);
+            }
+
             if thread.id == 0 {
-                let last_pv = thread.pv_idx + 1 == thread.multipv;
+                const VERBOSE_MULTIPV_DELAY: Duration = Duration::from_millis(1000);
+
+                if last_pv && !thread.stop {
+                    duck_stability += 1;
+                    if best_move.map(|mv| mv.duck()) != prev_move.map(|mv| mv.duck()) {
+                        duck_stability = 0;
+                    }
+
+                    move_stability += 1;
+                    if best_move != prev_move {
+                        move_stability = 0;
+                    }
+
+                    if shared.time_man.stop_id(depth, thread.nodes.global()) {
+                        shared.time_man.set_stop(true);
+                        thread.stop = true;
+                    }
+
+                    shared
+                        .time_man
+                        .deepen(depth, duck_stability, move_stability);
+                }
+
                 if info != SearchInfo::None
-                    && (thread.stop || (info != SearchInfo::Minimal && last_pv))
+                    && (thread.stop
+                        || (info != SearchInfo::Minimal
+                            && (last_pv || shared.time_man.elapsed() >= VERBOSE_MULTIPV_DELAY)))
                 {
                     info.depth(thread, shared, options);
                 }
             }
 
-            thread.pv_idx += 1;
-        }
-
-        let pv_move = thread.pv_move();
-
-        prev_move = best_move;
-        best_move = Some(pv_move.pv[0]);
-
-        duck_stability += 1;
-        if best_move.map(|mv| mv.duck()) != prev_move.map(|mv| mv.duck()) {
-            duck_stability = 0;
-        }
-
-        move_stability += 1;
-        if best_move != prev_move {
-            move_stability = 0;
-        }
-
-        depth += 1;
-        completed_depth += 1;
-
-        if thread.id == 0 {
-            if shared
-                .time_man
-                .stop_id(completed_depth, thread.nodes.global())
-            {
-                shared.time_man.set_stop(true);
-                thread.stop = true;
+            if thread.stop {
                 break 'id;
             }
 
-            shared
-                .time_man
-                .deepen(depth, duck_stability, move_stability);
+            thread.pv_idx += 1;
         }
 
-        if completed_depth == MAX_DEPTH || (depth > 1 && thread.stop) {
-            break 'id;
-        }
+        depth += 1;
     }
 
     // Wait for `stop` command if search is infinite
