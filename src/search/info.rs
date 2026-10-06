@@ -1,6 +1,6 @@
 use crate::engine::EngineOptions;
 use crate::score::Score;
-use crate::search::{SharedData, ThreadData};
+use crate::search::{Bound, SharedData, ThreadData};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum SearchInfo {
@@ -18,18 +18,22 @@ impl SearchInfo {
 
         for (pv_idx, root_move) in thread.root_moves[..thread.multipv].iter().enumerate() {
             let mut score = root_move.display_score;
-            let mut upper_bound = root_move.upper_bound;
-            let mut lower_bound = root_move.lower_bound;
+            let mut bound = root_move.bound;
 
             if score == -Score::INFINITE {
                 score = root_move.previous_score;
-                upper_bound = false;
-                lower_bound = false;
+                bound = Bound::Exact;
             }
 
             if score == -Score::INFINITE {
                 break;
             }
+
+            let bound = match bound {
+                Bound::Lower => " lowerbound",
+                Bound::Upper => " upperbound",
+                _ => "",
+            };
 
             print!("info");
 
@@ -38,20 +42,10 @@ impl SearchInfo {
             }
 
             print!(
-                " depth {} seldepth {} score {}",
-                root_move.searched_depth, root_move.sel_depth, score,
-            );
-
-            if upper_bound {
-                print!(" upperbound");
-            }
-
-            if lower_bound {
-                print!(" lowerbound");
-            }
-
-            println!(
-                " time {} nodes {nodes} nps {nps} pv {}",
+                " depth {} seldepth {} score {}{bound} time {} nodes {nodes} nps {nps} pv {}",
+                root_move.searched_depth,
+                root_move.sel_depth,
+                score,
                 time.as_millis(),
                 root_move.pv.display(options)
             );
