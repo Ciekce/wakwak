@@ -80,19 +80,28 @@ pub fn iterative_deepening(
                     Bound::Exact
                 };
 
-                if thread.id == 0 && info == SearchInfo::Full {
-                    info.depth(thread, shared, options);
-                }
-
                 if bound == Bound::Exact {
                     break 'asp;
+                }
+
+                if thread.id == 0 && info == SearchInfo::Full && options.multipv == 1 {
+                    info.depth(thread, shared, options);
+                }
+            }
+
+            thread.sort_searched_root_moves();
+
+            if thread.id == 0 {
+                let last_pv = thread.pv_idx + 1 == thread.multipv;
+                if info != SearchInfo::None
+                    && (thread.stop || (info != SearchInfo::Minimal && last_pv))
+                {
+                    info.depth(thread, shared, options);
                 }
             }
 
             thread.pv_idx += 1;
         }
-
-        thread.sort_searched_root_moves();
 
         let pv_move = thread.pv_move();
 
@@ -162,7 +171,6 @@ pub fn iterative_deepening(
     }
 
     if thread.id == 0 && info != SearchInfo::None {
-        info.depth(thread, shared, options);
         println!(
             "bestmove {}",
             thread.pv_move().pv[0].display(options.dumb_interface, options.frc)
