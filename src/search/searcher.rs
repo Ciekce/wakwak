@@ -331,8 +331,13 @@ impl ThreadData {
         &self.root_moves[0]
     }
 
-    pub fn sort_root_moves(&mut self) {
-        self.root_moves
+    pub fn sort_searched_root_moves(&mut self) {
+        self.root_moves[..=self.pv_idx]
+            .sort_by_key(|root_move| std::cmp::Reverse(root_move.score));
+    }
+
+    pub fn sort_remaining_root_moves(&mut self) {
+        self.root_moves[self.pv_idx..]
             .sort_by_key(|root_move| std::cmp::Reverse(root_move.score));
     }
 

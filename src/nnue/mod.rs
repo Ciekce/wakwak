@@ -24,6 +24,10 @@ cfg_select! {
         #[path = "simd/neon.rs"]
         pub mod simd;
     }
+    all(target_os = "emscripten", target_feature = "relaxed-simd") => {
+        #[path = "simd/wasm32.rs"]
+        pub mod simd;
+    }
     _ => {
         compile_error!(
             "Unsupported platform! Only AVX2 or newer (on x86) and Neon (on ARM) are supported"
@@ -34,12 +38,15 @@ cfg_select! {
 pub static NET: Network =
     unsafe { std::mem::transmute(*include_bytes!(concat!(env!("OUT_DIR"), "/wakwak.nnue"))) };
 
-pub const EVAL_SCALE: i32 = 400;
-pub const QA: i16 = 255;
-pub const QB: i16 = 64;
+pub const Q0: i16 = 255;
+pub const _Q1: i16 = 128;
+pub const Q: i32 = 64;
+pub const EVAL_SCALE: i64 = 400;
 
 pub const INPUT: usize = 768;
-pub const L1: usize = 512;
+pub const L1: usize = 1024;
+pub const L2: usize = 16;
+pub const L3: usize = 32;
 pub const HM: bool = true;
 
 #[inline]
@@ -49,8 +56,12 @@ pub fn should_mirror(sq: Square) -> bool {
 
 #[repr(C, align(64))]
 pub struct Network {
-    pub ft_weights: [[i16; L1]; INPUT],
-    pub ft_bias: [i16; L1],
-    pub out_weights: [i16; L1 * 2],
-    pub out_bias: i16,
+    pub l0w: [[i16; L1]; INPUT],
+    pub l0b: [i16; L1],
+    pub l1w: [[i8; L2 * 4]; L1 / 4],
+    pub l1b: [i32; L2],
+    pub l2w: [[i32; L3]; L2 * 2],
+    pub l2b: [i32; L3],
+    pub l3w: [i32; L3],
+    pub l3b: i32,
 }

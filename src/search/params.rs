@@ -66,6 +66,8 @@ params! {
     minor_corr:       i32 => 64;
     major_corr:       i32 => 64;
     nonpawn_corr:     i32 => 64;
+    cont1_corr:       i32 => 64;
+    cont2_corr:       i32 => 64;
     corr_bonus_scale: i64 => 128;
 
     quiet_bonus_base:  i32 => 128;
@@ -124,11 +126,12 @@ params! {
     cont4_malus_scale: i32 => 128;
     cont4_malus_max:   i32 => 2048;
 
-    rfp_base:      i32 => 0;
-    rfp_scale:     i32 => 50;
-    rfp_imp_base:  i32 => -50;
-    rfp_imp_scale: i32 => 50;
-    rfp_lerp:      i32 => 512;
+    rfp_base:       i32 => 0;
+    rfp_scale:      i32 => 50;
+    rfp_imp_base:   i32 => -50;
+    rfp_imp_scale:  i32 => 50;
+    rfp_corr_scale: i32 => 256;
+    rfp_lerp:       i32 => 512;
 
     razor_base:  i32 => 320;
     razor_scale: i32 => 250;
@@ -196,6 +199,7 @@ params! {
 
     se_beta:       i32 => 128;
     se_depth_lerp: i32 => 512;
+    se_dext:       i32 => 60;
 
     mp_see_threshold: i32 => 0;
     mp_qs_see_threshold: i32 => 0;
@@ -203,6 +207,10 @@ params! {
 
     qsldp_threshold: i32 => 2;
     qsdcp_threshold: i32 => 2;
+
+    asp_delta:       i32 => 20;
+    asp_beta_lerp:   i32 => 512;
+    asp_widen_scale: i32 => 128;
 
     soft_time_div: u64 => 98304;
     soft_time_inc: u64 => 2048;
@@ -226,8 +234,16 @@ params! {
     lmr_history:     i32 => 64;
     lmr_corr:        i32 => 3072;
 
-    fp_base:  i32 => 256;
-    fp_scale: i32 => 128;
+    fp_base:             i32 => 256;
+    fp_scale:            i32 => 128;
+    fp_hist_offset:      i32 => 4000;
+    fp_hist_div:         i32 => 64;
+    fp_hist_min:         i32 => -384;
+    fp_hist_max:         i32 => 384;
+    fp_hist_quiet_scale: i32 => 1024;
+    fp_hist_duck_scale:  i32 => 1024;
+    fp_hist_cont1_scale: i32 => 1024;
+    fp_hist_cont2_scale: i32 => 1024;
 
     noisy_lmr_noisy_scale: i32 => 128;
     noisy_lmr_duck_scale:  i32 => 128;
@@ -361,14 +377,14 @@ impl Params {
     }
 
     #[inline]
-    pub const fn rfp_margin(depth: i32, improving: bool) -> i32 {
+    pub const fn rfp_margin(depth: i32, corr: i32, improving: bool) -> i32 {
         let (base, scale) = if improving {
             (Self::rfp_imp_base(), Self::rfp_imp_scale())
         } else {
             (Self::rfp_base(), Self::rfp_scale())
         };
 
-        base + scale * depth
+        base + scale * depth + Self::rfp_corr_scale() * corr / 1024
     }
 
     #[inline]
@@ -589,6 +605,19 @@ impl Params {
     }
 
     #[inline]
+    pub fn fp_history(thread: &ThreadData, pos: &Position, indices: ContIndices, mv: Move) -> i32 {
+        let board = pos.board();
+        let mut history = 0;
+
+        history += thread.history.quiet(board, mv) * Self::fp_hist_quiet_scale();
+        history += thread.history.duck(board, mv) * Self::fp_hist_duck_scale();
+        history += thread.history.cont1(board, indices, mv) * Self::fp_hist_cont1_scale();
+        history += thread.history.cont2(board, indices, mv) * Self::fp_hist_cont2_scale();
+
+        history / 1024
+    }
+
+    #[inline]
     pub fn iid_depth(depth: i32) -> i32 {
         (Params::iid_depth_scale() * depth - Params::iid_depth_reduction()) / 1024
     }
@@ -599,8 +628,16 @@ impl Params {
     }
 
     #[inline]
-    pub fn fp_margin(depth: i32) -> i32 {
-        Params::fp_base() + Params::fp_scale() * depth
+    pub fn fp_margin(depth: i32, history: i32) -> i32 {
+        Self::fp_base()
+            + Self::fp_scale() * depth
+            + Self::history_adjustment(
+                history,
+                Self::fp_hist_offset(),
+                Self::fp_hist_div(),
+                Self::fp_hist_min(),
+                Self::fp_hist_max(),
+            )
     }
 
     #[inline]

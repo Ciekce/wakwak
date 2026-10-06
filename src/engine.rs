@@ -103,6 +103,7 @@ impl Engine {
             UciCommand::Position { board, moves } => self.set_position(board, moves),
             UciCommand::SetOption { name, value } => self.set_option(name, value),
             UciCommand::Stop => self.stop(),
+            UciCommand::Wait => self.searcher.wait(),
             UciCommand::Quit => return self.quit(),
         }
 
@@ -113,7 +114,7 @@ impl Engine {
     fn uci() {
         println!("id name wakwak v{ENGINE_VERSION}");
         println!(
-            "id author 87flowers, ethan-dally, Kelseyde, ptsouchlos, Shawn_Xu, Silverrzz, Sp00ph and Tecci"
+            "id author 87flowers, amberg12, Ciekce, ethan-dally, Kelseyde, ptsouchlos, Shawn_Xu, Silverrzz, Sp00ph, Tecci and Yoshie2000"
         );
         println!("option name Threads type spin default 1 min 1 max 1024");
         println!(
