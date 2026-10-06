@@ -41,7 +41,7 @@ impl SearchInfo {
                 print!(" multipv {}", pv_idx + 1);
             }
 
-            print!(
+            println!(
                 " depth {} seldepth {} score {}{bound} time {} nodes {nodes} nps {nps} pv {}",
                 root_move.searched_depth,
                 root_move.sel_depth,

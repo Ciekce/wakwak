@@ -2,10 +2,9 @@ use crate::common::{Bitboard, Move, Piece, Square, between};
 use crate::engine::EngineOptions;
 use crate::position::Position;
 use crate::score::Score;
-use crate::search::cont::ContIndices;
-use crate::search::tt::TTFlag;
 use crate::search::{
-    MAX_PLY, MovePicker, Params, PrincipalVariation, SearchInfo, SharedData, Stage, ThreadData,
+    Bound, ContCorrIndices, ContIndices, MAX_DEPTH, MAX_PLY, MovePicker, Params,
+    PrincipalVariation, SearchInfo, SharedData, Stage, ThreadData,
 };
 use std::sync::atomic::Ordering;
 
@@ -14,6 +13,7 @@ pub struct SearchStack {
     pv: PrincipalVariation,
     raw_eval: Option<Score>,
     static_eval: Option<Score>,
+    skip_move: Option<Move>,
     mv: Option<Move>,
 }
 
@@ -43,23 +43,61 @@ pub fn iterative_deepening(
         thread.pv_idx = 0;
 
         while thread.pv_idx < thread.multipv {
-            thread.sel_depth = 0;
-            thread.nmr_ply = None;
-            search::<Root>(
-                &mut pos,
-                thread,
-                shared,
-                -Score::INFINITE,
-                Score::INFINITE,
-                depth as i32,
-                0,
-            );
-            thread.nodes.flush();
+            let root_move = &thread.root_moves[thread.pv_idx];
 
-            thread.sort_root_moves();
+            let mut delta = Params::asp_delta();
+            let mut alpha = -Score::INFINITE;
+            let mut beta = Score::INFINITE;
 
-            if depth > 1 && thread.stop {
-                break 'id;
+            if depth >= 4 {
+                let score = root_move.window_score;
+                alpha = (score - delta).max(-Score::INFINITE);
+                beta = (score + delta).min(Score::INFINITE);
+            }
+
+            'asp: loop {
+                thread.sel_depth = 0;
+                thread.nmr_ply = None;
+                let score = search::<Root>(&mut pos, thread, shared, alpha, beta, depth as i32, 0);
+                thread.nodes.flush();
+
+                thread.sort_remaining_root_moves();
+
+                if depth > 1 && thread.stop {
+                    break 'asp;
+                }
+
+                let bound = if score <= alpha {
+                    beta = Score(Params::lerp(alpha.0, beta.0, Params::asp_beta_lerp()));
+                    alpha = (score - delta).max(-Score::INFINITE);
+                    delta += delta * Params::asp_widen_scale() / 64;
+                    Bound::Upper
+                } else if score >= beta {
+                    beta = (score + delta).min(Score::INFINITE);
+                    delta += delta * Params::asp_widen_scale() / 64;
+                    Bound::Lower
+                } else {
+                    Bound::Exact
+                };
+
+                if bound == Bound::Exact {
+                    break 'asp;
+                }
+
+                if thread.id == 0 && info == SearchInfo::Full && options.multipv == 1 {
+                    info.depth(thread, shared, options);
+                }
+            }
+
+            thread.sort_searched_root_moves();
+
+            if thread.id == 0 {
+                let last_pv = thread.pv_idx + 1 == thread.multipv;
+                if info != SearchInfo::None
+                    && (thread.stop || (info != SearchInfo::Minimal && last_pv))
+                {
+                    info.depth(thread, shared, options);
+                }
             }
 
             thread.pv_idx += 1;
@@ -83,10 +121,6 @@ pub fn iterative_deepening(
         depth += 1;
         completed_depth += 1;
 
-        if thread.id == 0 && info == SearchInfo::Full {
-            info.depth(thread, shared, options);
-        }
-
         if thread.id == 0 {
             if shared
                 .time_man
@@ -100,6 +134,10 @@ pub fn iterative_deepening(
             shared
                 .time_man
                 .deepen(depth, duck_stability, move_stability);
+        }
+
+        if completed_depth == MAX_DEPTH || (depth > 1 && thread.stop) {
+            break 'id;
         }
     }
 
@@ -133,7 +171,6 @@ pub fn iterative_deepening(
     }
 
     if thread.id == 0 && info != SearchInfo::None {
-        info.depth(thread, shared, options);
         println!(
             "bestmove {}",
             thread.pv_move().pv[0].display(options.dumb_interface, options.frc)
