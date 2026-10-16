@@ -339,7 +339,7 @@ fn search<Node: NodeType>(
         let prev_stack = &thread.stack[ply - 1];
         if prev_stack.reduction >= Params::hindsight_ext_red()
             && let Some(prev_eval) = prev_stack.static_eval
-            && static_eval + prev_eval < Params::hindsight_ext_eval()
+            && static_eval + prev_eval < 0
         {
             depth = (depth + 1).min(MAX_DEPTH as i32);
         }
@@ -505,7 +505,6 @@ fn search<Node: NodeType>(
             History Pruning (HP): Prune quiet moves with terrible history scores
             */
             if is_quiet
-                && depth <= 5
                 && Params::quiet_hp_history(thread, pos, cont_indices, mv)
                     < Params::quiet_hp_margin(depth)
             {
@@ -633,9 +632,9 @@ fn search<Node: NodeType>(
             if !Node::PV || legal_moves > 1 {
                 let lmr = if depth >= 3 && searched_moves > 6 && is_quiet {
                     let mut r = base_reduction;
-                    r += Params::lmr_exact() * (bound == Bound::Exact) as i32;
-                    r += Params::lmr_imp() * !improving as i32;
                     r += Params::lmr_pv() * !Node::PV as i32;
+                    r += Params::lmr_imp() * !improving as i32;
+                    r += Params::lmr_exact() * (bound == Bound::Exact) as i32;
                     r -= Params::lmr_in_check() * pos.board().in_check() as i32;
                     r -= Params::lmr_history() * lmr_history / 1024;
                     r -= Params::lmr_corr() * corr.abs() / 1024;
@@ -899,12 +898,12 @@ fn qsearch<Node: NodeType>(
         }
 
         // Duck Count Pruning (DCP)
-        if duck_counts[duck] >= Params::qsdcp_threshold() as u8 {
+        if duck_counts[duck] >= 2 {
             continue;
         }
 
         // Late Duck Pruning (LDP)
-        if move_counts[src][dest] >= Params::qsldp_threshold() as u8 {
+        if move_counts[src][dest] >= 2 {
             continue;
         }
 
