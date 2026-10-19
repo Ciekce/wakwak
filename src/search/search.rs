@@ -58,6 +58,9 @@ pub fn iterative_deepening(
             }
 
             'asp: loop {
+                for root_move in &mut thread.root_moves[thread.pv_idx..] {
+                    root_move.score = -Score::INFINITE;
+                }
                 thread.sel_depth = 0;
                 thread.nmr_ply = None;
                 let score = search::<Root>(&mut pos, thread, shared, alpha, beta, depth as i32, 0);
