@@ -519,7 +519,7 @@ fn search<Node: NodeType>(
             */
             if !Node::PV
                 && is_quiet
-                && duck_counts[duck] >= Params::dcp_threshold(depth, improving, duck_history) as u8
+                && duck_counts[duck] as i32 >= Params::dcp_threshold(depth, improving, duck_history)
             {
                 continue;
             }
@@ -635,6 +635,10 @@ fn search<Node: NodeType>(
                     r += Params::lmr_pv() * !Node::PV as i32;
                     r += Params::lmr_imp() * !improving as i32;
                     r += Params::lmr_exact() * (bound == Bound::Exact) as i32;
+                    r += Params::lmr_duck_count()
+                        * (duck_counts[duck] as i32
+                            > 1 + thread.history.duck_count(pos.board(), mv))
+                            as i32;
                     r -= Params::lmr_in_check() * pos.board().in_check() as i32;
                     r -= Params::lmr_history() * lmr_history / 1024;
                     r -= Params::lmr_corr() * corr.abs() / 1024;
@@ -715,6 +719,7 @@ fn search<Node: NodeType>(
                     cont_indices,
                     depth,
                     best_move.unwrap(),
+                    &duck_counts,
                     &failed_quiets,
                     &failed_noisies,
                 );
