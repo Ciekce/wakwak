@@ -249,7 +249,7 @@ impl SharedData {
     }
 
     fn init(&self, position: &Position, limits: &[SearchLimit], options: EngineOptions) {
-        self.time_man.init(position.board().stm(), &limits, options);
+        self.time_man.init(position.board().stm(), limits, options);
         let mut root_moves = self.root_moves.write().unwrap();
         root_moves.clear();
         position.board().gen_all_moves(|moves| {
@@ -320,9 +320,9 @@ impl ThreadData {
     }
 
     pub fn is_legal_root_move(&self, mv: Move) -> bool {
-        self.root_moves[self.pv_idx..]
+        self.root_moves[..self.pv_idx]
             .iter()
-            .any(|root_move| root_move.pv[0] == mv)
+            .all(|root_move| root_move.pv[0] != mv)
     }
 
     pub fn pv_move(&self) -> &RootMove {
