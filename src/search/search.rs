@@ -487,6 +487,7 @@ fn search<Node: NodeType>(
             we can skip the rest of the duck moves that don't block the refutation(s).
             */
             if duck_refutations[dest].0 == piece_move && duck_refutations[dest].1.has(mv.duck()) {
+                // FIXME: WakWak is blind to some repetitions because it doesn't block the opponent's "refutation"
                 continue;
             }
 
