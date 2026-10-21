@@ -35,10 +35,8 @@ pub fn iterative_deepening(
     let mut prev_move = None;
 
     'id: loop {
-        let previous_root_moves = thread.root_moves[..thread.multipv].to_vec();
         for root_move in thread.root_moves.iter_mut() {
             root_move.previous_score = root_move.score;
-            root_move.score = -Score::INFINITE;
         }
 
         thread.root_depth = depth as usize;
@@ -69,11 +67,7 @@ pub fn iterative_deepening(
                 thread.sort_remaining_root_moves();
 
                 if depth > 1 && thread.stop {
-                    thread.root_moves = previous_root_moves;
-                    if thread.id == 0 && info != SearchInfo::None {
-                        info.depth(thread, shared, options);
-                    }
-                    break 'id;
+                    break 'asp;
                 }
 
                 let bound = if score <= alpha {
