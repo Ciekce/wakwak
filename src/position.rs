@@ -88,11 +88,14 @@ impl Position {
     }
 
     #[inline]
-    pub fn repetition(&self) -> bool {
-        self.previous_boards
+    pub fn repetition(&self, ply: usize) -> bool {
+        let mut matches = self
+            .previous_boards
             .iter()
             .rev()
             .take(self.current.hmc() as usize)
-            .any(|b| b.duckless_hash() == self.current.duckless_hash())
+            .enumerate()
+            .filter(|(_, board)| board.hash() == self.current.hash());
+        matches.next().is_some_and(|(index, _)| index < ply) || matches.next().is_some()
     }
 }

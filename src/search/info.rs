@@ -15,6 +15,7 @@ impl SearchInfo {
         let nodes = thread.nodes.global();
         let time = shared.time_man.elapsed();
         let nps = ((nodes as f64) / (time.as_micros().max(1) as f64) * 1e6) as u64;
+        let hashfull = shared.tt.hashfull();
 
         for (pv_idx, root_move) in thread.root_moves[..thread.multipv].iter().enumerate() {
             let mut score = root_move.display_score;
@@ -42,7 +43,7 @@ impl SearchInfo {
             }
 
             println!(
-                " depth {} seldepth {} score {}{bound} time {} nodes {nodes} nps {nps} pv {}",
+                " depth {} seldepth {} score {}{bound} time {} nodes {nodes} nps {nps} hashfull {hashfull} pv {}",
                 root_move.searched_depth,
                 root_move.sel_depth,
                 score,
