@@ -30,20 +30,20 @@ impl SearchInfo {
                 break;
             }
 
+            let multipv = if options.multipv > 1 {
+                format!("multipv {}", pv_idx + 1)
+            } else {
+                "".into()
+            };
+
             let bound = match bound {
                 Bound::Lower => " lowerbound",
                 Bound::Upper => " upperbound",
                 _ => "",
             };
 
-            if options.multipv > 1 {
-                print!("info multipv {}", pv_idx + 1);
-            } else {
-                print!("info");
-            }
-
             println!(
-                " depth {} seldepth {} score {}{bound} time {} nodes {nodes} nps {nps} hashfull {hashfull} pv {}",
+                "info{multipv} depth {} seldepth {} score {}{bound} time {} nodes {nodes} nps {nps} hashfull {hashfull} pv {}",
                 root_move.searched_depth,
                 root_move.sel_depth,
                 score,
