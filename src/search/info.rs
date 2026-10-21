@@ -31,7 +31,7 @@ impl SearchInfo {
             }
 
             let multipv = if options.multipv > 1 {
-                format!("multipv {}", pv_idx + 1)
+                format!(" multipv {}", pv_idx + 1)
             } else {
                 "".into()
             };
